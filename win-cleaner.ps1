@@ -1,15 +1,19 @@
 #Requires -Version 5.1
+using module .\modules\Core\ICleanerModule.psm1
+using module .\modules\Core\CleanerEngine.psm1
+using module .\modules\Core\Logger.psm1
+using module .\modules\TempCleaner\TempCleaner.psm1
+using module .\modules\RegistryCleaner\RegistryCleaner.psm1
+
+param(
+    [switch]$DryRun
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $scriptRoot = $PSScriptRoot
 
-# Load modules
-using module .\modules\Core\ICleanerModule.psm1
-using module .\modules\Core\CleanerEngine.psm1
-using module .\modules\TempCleaner\TempCleaner.psm1
-using module .\modules\RegistryCleaner\RegistryCleaner.psm1
 Import-Module "$scriptRoot\modules\Core\PermissionChecker.psm1" -Force
 
 function Read-Settings {
@@ -58,9 +62,14 @@ function Format-FileSize {
 }
 
 function Show-Banner {
+    param(
+        [bool]$IsDryRun
+    )
+
+    $mode = if ($IsDryRun) { " [DryRun]" } else { "" }
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Windows Cleaner v0.1.0" -ForegroundColor Cyan
+    Write-Host "  Windows Cleaner v0.1.0$mode" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
 }
@@ -85,7 +94,9 @@ function Show-Menu {
 function Invoke-CleanerModule {
     param(
         [CleanerEngine]$Engine,
-        [int]$ModuleIndex
+        [int]$ModuleIndex,
+        [bool]$IsDryRun,
+        [Logger]$Logger
     )
 
     $moduleInfo = $Engine.GetModuleList()[$ModuleIndex]
@@ -95,12 +106,16 @@ function Invoke-CleanerModule {
     }
 
     Write-Host "Analyzing with $($moduleInfo.Name)..." -ForegroundColor Yellow
+    $Logger.Write("Start: $($moduleInfo.Name)")
     $items = $Engine.AnalyzeModule($ModuleIndex)
 
     if ($items.Count -eq 0) {
         Write-Host "No items found." -ForegroundColor Green
+        $Logger.Write("No items found.")
         return
     }
+
+    $Logger.WriteAnalyzeResult($moduleInfo.Name, $items)
 
     $grouped = $items | Group-Object -Property Category
     foreach ($group in $grouped) {
@@ -114,14 +129,23 @@ function Invoke-CleanerModule {
     Write-Host "Total: $totalItems items ($(Format-FileSize $totalSize))" -ForegroundColor Yellow
     Write-Host ""
 
+    if ($IsDryRun) {
+        Write-Host "[DryRun] No files were deleted." -ForegroundColor Magenta
+        $Logger.WriteDryRun($moduleInfo.Name, $items)
+        return
+    }
+
     $confirm = Read-Host "Proceed with cleaning? (y/N)"
     if ($confirm -ne 'y') {
         Write-Host "Cancelled." -ForegroundColor Gray
+        $Logger.Write("Cancelled by user.")
         return
     }
 
     Write-Host "Cleaning..." -ForegroundColor Yellow
     $result = $Engine.CleanModule($ModuleIndex, $items)
+
+    $Logger.WriteCleanResult($moduleInfo.Name, $result)
 
     Write-Host ""
     Write-Host "Completed: $($result.ItemCount) items removed ($(Format-FileSize $result.FreedBytes))" -ForegroundColor Green
@@ -136,9 +160,18 @@ function Invoke-CleanerModule {
 
 # Main
 function Start-WinCleaner {
-    Show-Banner
+    param(
+        [bool]$IsDryRun
+    )
+
+    Show-Banner -IsDryRun $IsDryRun
 
     $settings = Read-Settings
+    $logger = [Logger]::new($scriptRoot)
+    $logger.Write("Session started (DryRun: $IsDryRun)")
+
+    Write-Host "Log: $($logger.LogPath)" -ForegroundColor DarkGray
+    Write-Host ""
 
     $engine = [CleanerEngine]::new()
     $engine.Register([TempCleaner]::new($settings))
@@ -152,6 +185,7 @@ function Start-WinCleaner {
 
         if ($choice -eq '0') {
             Write-Host "Bye!" -ForegroundColor Cyan
+            $logger.Write("Session ended.")
             break
         }
 
@@ -161,9 +195,9 @@ function Start-WinCleaner {
             continue
         }
 
-        Invoke-CleanerModule -Engine $engine -ModuleIndex ($index - 1)
+        Invoke-CleanerModule -Engine $engine -ModuleIndex ($index - 1) -IsDryRun $IsDryRun -Logger $logger
         Write-Host ""
     }
 }
 
-Start-WinCleaner
+Start-WinCleaner -IsDryRun $DryRun.IsPresent

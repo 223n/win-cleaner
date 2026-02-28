@@ -10,6 +10,7 @@ $RECYCLE.BIN/
 
 # PowerShell
 *.log
+logs/
 
 # 一時ファイル
 *.tmp
