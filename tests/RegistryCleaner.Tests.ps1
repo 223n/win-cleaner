@@ -1,8 +1,8 @@
 #Requires -Modules Pester
+using module ..\modules\Core\ICleanerModule.psm1
+using module ..\modules\RegistryCleaner\RegistryCleaner.psm1
 
 BeforeAll {
-    using module ..\modules\Core\ICleanerModule.psm1
-    using module ..\modules\RegistryCleaner\RegistryCleaner.psm1
     Import-Module "$PSScriptRoot\..\modules\RegistryCleaner\RegistryCleanerRule.psm1" -Force
 }
 

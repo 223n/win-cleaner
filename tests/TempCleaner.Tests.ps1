@@ -1,8 +1,8 @@
 #Requires -Modules Pester
+using module ..\modules\Core\ICleanerModule.psm1
+using module ..\modules\TempCleaner\TempCleaner.psm1
 
 BeforeAll {
-    using module ..\modules\Core\ICleanerModule.psm1
-    using module ..\modules\TempCleaner\TempCleaner.psm1
     Import-Module "$PSScriptRoot\..\modules\TempCleaner\TempCleanerRule.psm1" -Force
 }
 
