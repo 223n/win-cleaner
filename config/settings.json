@@ -1,0 +1,53 @@
+{
+  "tempCleaner": {
+    "targets": [
+      {
+        "category": "Windows Temp",
+        "path": "%TEMP%",
+        "pattern": "*",
+        "recurse": true
+      },
+      {
+        "category": "Windows Temp",
+        "path": "%SystemRoot%\\Temp",
+        "pattern": "*",
+        "recurse": true
+      },
+      {
+        "category": "Windows Prefetch",
+        "path": "%SystemRoot%\\Prefetch",
+        "pattern": "*.pf",
+        "recurse": false
+      },
+      {
+        "category": "Windows Update Cache",
+        "path": "%SystemRoot%\\SoftwareDistribution\\Download",
+        "pattern": "*",
+        "recurse": true
+      }
+    ],
+    "excludePatterns": [
+      "*.sys",
+      "*.dll"
+    ]
+  },
+  "registryCleaner": {
+    "targets": [
+      {
+        "category": "Invalid SharedDLLs",
+        "keyPath": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\SharedDLLs",
+        "rule": "invalidFileReference"
+      },
+      {
+        "category": "Invalid App Paths",
+        "keyPath": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths",
+        "rule": "invalidAppPath"
+      },
+      {
+        "category": "Invalid Uninstall Entries",
+        "keyPath": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+        "rule": "invalidAppPath"
+      }
+    ]
+  }
+}
