@@ -15,22 +15,25 @@ function Resolve-HkcrPath {
 
     $relativePath = $Path.Substring($idx + $hkcrMarker.Length)
 
-    # HKLMを先に確認（管理者権限前提）
-    $hklmPath = "HKLM:\SOFTWARE\Classes\$relativePath"
-    if (Test-Path $hklmPath) {
-        return $hklmPath
-    }
+    # .NET APIでハイブを順に確認（Test-PathはACL制限で失敗するケースがある）
+    $candidates = @(
+        @{ Hive = [Microsoft.Win32.Registry]::LocalMachine; Drive = 'HKLM:'; Sub = "SOFTWARE\Classes\$relativePath" }
+        @{ Hive = [Microsoft.Win32.Registry]::CurrentUser;  Drive = 'HKCU:'; Sub = "SOFTWARE\Classes\$relativePath" }
+        @{ Hive = [Microsoft.Win32.Registry]::LocalMachine; Drive = 'HKLM:'; Sub = "SOFTWARE\WOW6432Node\Classes\$relativePath" }
+    )
 
-    # HKCUを確認
-    $hkcuPath = "HKCU:\SOFTWARE\Classes\$relativePath"
-    if (Test-Path $hkcuPath) {
-        return $hkcuPath
-    }
-
-    # WOW6432Node（32bit COM登録）を確認
-    $wow64Path = "HKLM:\SOFTWARE\WOW6432Node\Classes\$relativePath"
-    if (Test-Path $wow64Path) {
-        return $wow64Path
+    foreach ($c in $candidates) {
+        $key = $null
+        try {
+            $key = $c.Hive.OpenSubKey($c.Sub, $false)
+            if ($null -ne $key) {
+                return "$($c.Drive)\$($c.Sub)"
+            }
+        }
+        catch {}
+        finally {
+            if ($null -ne $key) { $key.Dispose() }
+        }
     }
 
     return $Path
