@@ -199,7 +199,17 @@ function Invoke-RuleInvalidCOMReference {
                         $serverSubKey = $clsidKey.OpenSubKey($serverKey, $false)
                         if ($null -ne $serverSubKey) {
                             $defaultValue = $serverSubKey.GetValue('')
-                            if ($defaultValue -and (Test-InvalidRegistryReference -Path $defaultValue)) {
+                            if (-not $defaultValue) { continue }
+
+                            # LocalServer32はコマンドラインなので実行ファイルパスを抽出
+                            if ($serverKey -eq 'LocalServer32') {
+                                $checkPath = Get-ExecutablePath -CommandLine $defaultValue
+                            }
+                            else {
+                                $checkPath = $defaultValue
+                            }
+
+                            if ($checkPath -and (Test-InvalidRegistryReference -Path $checkPath)) {
                                 $invalid = $true
                                 break
                             }
@@ -212,21 +222,24 @@ function Invoke-RuleInvalidCOMReference {
 
                 if ($invalid) {
                     # 書き込み権限を確認 — 削除できないキーはスキップ
+                    $canDelete = $false
                     $writableKey = $null
                     try {
                         $writableKey = $baseKey.OpenSubKey($name, $true)
-                        if ($null -eq $writableKey) { continue }
+                        if ($null -ne $writableKey) { $canDelete = $true }
                     }
-                    catch { continue }
+                    catch {}
                     finally {
                         if ($null -ne $writableKey) { $writableKey.Dispose() }
                     }
 
-                    $item = [CleanerItem]::new()
-                    $item.Path = "Microsoft.PowerShell.Core\Registry::$($components.HiveName)\$($components.SubPath)\$name"
-                    $item.Size = 0
-                    $item.Category = $Target.category
-                    $Items.Add($item)
+                    if ($canDelete) {
+                        $item = [CleanerItem]::new()
+                        $item.Path = "Microsoft.PowerShell.Core\Registry::$($components.HiveName)\$($components.SubPath)\$name"
+                        $item.Size = 0
+                        $item.Category = $Target.category
+                        $Items.Add($item)
+                    }
                 }
             }
             catch [System.Security.SecurityException], [System.UnauthorizedAccessException] {
@@ -309,21 +322,24 @@ function Invoke-RuleInvalidTypeLib {
 
                 if ($invalid) {
                     # 書き込み権限を確認 — 削除できないキーはスキップ
+                    $canDelete = $false
                     $writableKey = $null
                     try {
                         $writableKey = $baseKey.OpenSubKey($guidName, $true)
-                        if ($null -eq $writableKey) { continue }
+                        if ($null -ne $writableKey) { $canDelete = $true }
                     }
-                    catch { continue }
+                    catch {}
                     finally {
                         if ($null -ne $writableKey) { $writableKey.Dispose() }
                     }
 
-                    $item = [CleanerItem]::new()
-                    $item.Path = "Microsoft.PowerShell.Core\Registry::$($components.HiveName)\$($components.SubPath)\$guidName"
-                    $item.Size = 0
-                    $item.Category = $Target.category
-                    $Items.Add($item)
+                    if ($canDelete) {
+                        $item = [CleanerItem]::new()
+                        $item.Path = "Microsoft.PowerShell.Core\Registry::$($components.HiveName)\$($components.SubPath)\$guidName"
+                        $item.Size = 0
+                        $item.Category = $Target.category
+                        $Items.Add($item)
+                    }
                 }
             }
             catch [System.Security.SecurityException], [System.UnauthorizedAccessException] {
