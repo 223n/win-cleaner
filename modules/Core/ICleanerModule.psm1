@@ -14,6 +14,7 @@ class CleanerItem {
     [string]$Path
     [long]$Size
     [string]$Category
+    [string]$PropertyName
 }
 
 class ICleanerModule {
