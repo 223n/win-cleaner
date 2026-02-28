@@ -211,6 +211,17 @@ function Invoke-RuleInvalidCOMReference {
                 }
 
                 if ($invalid) {
+                    # 書き込み権限を確認 — 削除できないキーはスキップ
+                    $writableKey = $null
+                    try {
+                        $writableKey = $baseKey.OpenSubKey($name, $true)
+                        if ($null -eq $writableKey) { continue }
+                    }
+                    catch { continue }
+                    finally {
+                        if ($null -ne $writableKey) { $writableKey.Dispose() }
+                    }
+
                     $item = [CleanerItem]::new()
                     $item.Path = "Microsoft.PowerShell.Core\Registry::$($components.HiveName)\$($components.SubPath)\$name"
                     $item.Size = 0
@@ -297,6 +308,17 @@ function Invoke-RuleInvalidTypeLib {
                 }
 
                 if ($invalid) {
+                    # 書き込み権限を確認 — 削除できないキーはスキップ
+                    $writableKey = $null
+                    try {
+                        $writableKey = $baseKey.OpenSubKey($guidName, $true)
+                        if ($null -eq $writableKey) { continue }
+                    }
+                    catch { continue }
+                    finally {
+                        if ($null -ne $writableKey) { $writableKey.Dispose() }
+                    }
+
                     $item = [CleanerItem]::new()
                     $item.Path = "Microsoft.PowerShell.Core\Registry::$($components.HiveName)\$($components.SubPath)\$guidName"
                     $item.Size = 0
