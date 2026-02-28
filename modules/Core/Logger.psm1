@@ -13,7 +13,12 @@ class Logger {
 
     [void] Write([string]$message) {
         $entry = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $message"
-        Add-Content -Path $this.LogPath -Value $entry -Encoding UTF8
+        try {
+            Add-Content -Path $this.LogPath -Value $entry -Encoding UTF8
+        }
+        catch {
+            Write-Warning "Failed to write log: $($_.Exception.Message)"
+        }
     }
 
     [void] WriteAnalyzeResult([string]$moduleName, [object[]]$items) {
