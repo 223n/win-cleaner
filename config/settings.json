@@ -24,6 +24,48 @@
         "path": "%SystemRoot%\\SoftwareDistribution\\Download",
         "pattern": "*",
         "recurse": true
+      },
+      {
+        "category": "Chrome Cache",
+        "path": "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\Default\\Cache\\Cache_Data",
+        "pattern": "*",
+        "recurse": true
+      },
+      {
+        "category": "Chrome Cache",
+        "path": "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\Default\\Code Cache",
+        "pattern": "*",
+        "recurse": true
+      },
+      {
+        "category": "Edge Cache",
+        "path": "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\Default\\Cache\\Cache_Data",
+        "pattern": "*",
+        "recurse": true
+      },
+      {
+        "category": "Edge Cache",
+        "path": "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\Default\\Code Cache",
+        "pattern": "*",
+        "recurse": true
+      },
+      {
+        "category": "Firefox Cache",
+        "path": "%LOCALAPPDATA%\\Mozilla\\Firefox\\Profiles\\*\\cache2\\entries",
+        "pattern": "*",
+        "recurse": false
+      },
+      {
+        "category": "Brave Cache",
+        "path": "%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\Default\\Cache\\Cache_Data",
+        "pattern": "*",
+        "recurse": true
+      },
+      {
+        "category": "Brave Cache",
+        "path": "%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\Default\\Code Cache",
+        "pattern": "*",
+        "recurse": true
       }
     ],
     "excludePatterns": [
