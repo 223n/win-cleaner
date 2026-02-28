@@ -4,8 +4,9 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 
-# VSCode
+# IDE / Tools
 .vscode/
+.claude/
 
 # PowerShell
 *.log
