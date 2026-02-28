@@ -15,7 +15,7 @@ function Get-TempCleanerTargets {
             }
         }
     }
-    return $targets
+    return , @($targets)
 }
 
 function Test-ExcludedPath {
