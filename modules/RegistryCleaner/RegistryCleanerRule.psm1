@@ -73,6 +73,51 @@ function Get-ExecutablePath {
     return $null
 }
 
+function ConvertTo-RegistryKeyComponents {
+    param(
+        [string]$Path
+    )
+
+    $hive = $null
+    $hiveName = $null
+    $subPath = $null
+
+    if ($Path -match '^HKLM:\\(.+)$') {
+        $hive = [Microsoft.Win32.Registry]::LocalMachine
+        $hiveName = 'HKEY_LOCAL_MACHINE'
+        $subPath = $Matches[1]
+    }
+    elseif ($Path -match '^HKCU:\\(.+)$') {
+        $hive = [Microsoft.Win32.Registry]::CurrentUser
+        $hiveName = 'HKEY_CURRENT_USER'
+        $subPath = $Matches[1]
+    }
+    elseif ($Path -match '(?i)Registry::HKEY_CLASSES_ROOT\\(.+)$') {
+        $hive = [Microsoft.Win32.Registry]::ClassesRoot
+        $hiveName = 'HKEY_CLASSES_ROOT'
+        $subPath = $Matches[1]
+    }
+    elseif ($Path -match '(?i)Registry::HKEY_LOCAL_MACHINE\\(.+)$') {
+        $hive = [Microsoft.Win32.Registry]::LocalMachine
+        $hiveName = 'HKEY_LOCAL_MACHINE'
+        $subPath = $Matches[1]
+    }
+    elseif ($Path -match '(?i)Registry::HKEY_CURRENT_USER\\(.+)$') {
+        $hive = [Microsoft.Win32.Registry]::CurrentUser
+        $hiveName = 'HKEY_CURRENT_USER'
+        $subPath = $Matches[1]
+    }
+    else {
+        return $null
+    }
+
+    return @{
+        Hive     = $hive
+        HiveName = $hiveName
+        SubPath  = $subPath
+    }
+}
+
 function Invoke-RuleInvalidFileReference {
     param(
         [hashtable]$Target,
@@ -133,35 +178,62 @@ function Invoke-RuleInvalidCOMReference {
         [System.Collections.Generic.List[CleanerItem]]$Items
     )
 
-    $clsidPath = $Target.keyPath
-    $subKeys = Get-ChildItem -Path $clsidPath -ErrorAction SilentlyContinue
-    foreach ($subKey in $subKeys) {
-        try {
-            $invalid = $false
-            foreach ($serverKey in @('InprocServer32', 'LocalServer32')) {
-                $serverPath = Join-Path $subKey.PSPath $serverKey
-                if (Test-Path $serverPath) {
-                    $defaultValue = (Get-ItemProperty -Path $serverPath -ErrorAction SilentlyContinue).'(default)'
-                    if ($defaultValue -and (Test-InvalidRegistryReference -Path $defaultValue)) {
-                        $invalid = $true
-                        break
+    $components = ConvertTo-RegistryKeyComponents -Path $Target.keyPath
+    if ($null -eq $components) { return }
+
+    $baseKey = $null
+    try {
+        $baseKey = $components.Hive.OpenSubKey($components.SubPath, $false)
+        if ($null -eq $baseKey) { return }
+
+        foreach ($name in $baseKey.GetSubKeyNames()) {
+            $clsidKey = $null
+            try {
+                $clsidKey = $baseKey.OpenSubKey($name, $false)
+                if ($null -eq $clsidKey) { continue }
+
+                $invalid = $false
+                foreach ($serverKey in @('InprocServer32', 'LocalServer32')) {
+                    $serverSubKey = $null
+                    try {
+                        $serverSubKey = $clsidKey.OpenSubKey($serverKey, $false)
+                        if ($null -ne $serverSubKey) {
+                            $defaultValue = $serverSubKey.GetValue('')
+                            if ($defaultValue -and (Test-InvalidRegistryReference -Path $defaultValue)) {
+                                $invalid = $true
+                                break
+                            }
+                        }
+                    }
+                    finally {
+                        if ($null -ne $serverSubKey) { $serverSubKey.Dispose() }
                     }
                 }
+
+                if ($invalid) {
+                    $item = [CleanerItem]::new()
+                    $item.Path = "Microsoft.PowerShell.Core\Registry::$($components.HiveName)\$($components.SubPath)\$name"
+                    $item.Size = 0
+                    $item.Category = $Target.category
+                    $Items.Add($item)
+                }
             }
-            if ($invalid) {
-                $item = [CleanerItem]::new()
-                $item.Path = $subKey.PSPath
-                $item.Size = 0
-                $item.Category = $Target.category
-                $Items.Add($item)
+            catch [System.Security.SecurityException], [System.UnauthorizedAccessException] {
+                # Permission denied — skip this subkey
+            }
+            catch {
+                Write-Warning "Registry scan error at '$($Target.keyPath)\$name': $($_.Exception.Message)"
+            }
+            finally {
+                if ($null -ne $clsidKey) { $clsidKey.Dispose() }
             }
         }
-        catch [System.Security.SecurityException], [System.UnauthorizedAccessException] {
-            # Permission denied — skip this subkey
-        }
-        catch {
-            Write-Warning "Registry scan error at '$($subKey.PSPath)': $($_.Exception.Message)"
-        }
+    }
+    catch [System.Security.SecurityException], [System.UnauthorizedAccessException] {
+        # Permission denied
+    }
+    finally {
+        if ($null -ne $baseKey) { $baseKey.Dispose() }
     }
 }
 
@@ -171,43 +243,83 @@ function Invoke-RuleInvalidTypeLib {
         [System.Collections.Generic.List[CleanerItem]]$Items
     )
 
-    $typeLibPath = $Target.keyPath
-    $guidKeys = Get-ChildItem -Path $typeLibPath -ErrorAction SilentlyContinue
-    foreach ($guidKey in $guidKeys) {
-        try {
-            $invalid = $false
-            $versionKeys = Get-ChildItem -Path $guidKey.PSPath -ErrorAction SilentlyContinue
-            foreach ($versionKey in $versionKeys) {
-                $zeroPath = Join-Path $versionKey.PSPath '0'
-                if (-not (Test-Path $zeroPath)) {
-                    continue
-                }
-                foreach ($platform in @('win32', 'win64')) {
-                    $platPath = Join-Path $zeroPath $platform
-                    if (Test-Path $platPath) {
-                        $defaultValue = (Get-ItemProperty -Path $platPath -ErrorAction SilentlyContinue).'(default)'
-                        if ($defaultValue -and (Test-InvalidRegistryReference -Path $defaultValue)) {
-                            $invalid = $true
-                            break
+    $components = ConvertTo-RegistryKeyComponents -Path $Target.keyPath
+    if ($null -eq $components) { return }
+
+    $baseKey = $null
+    try {
+        $baseKey = $components.Hive.OpenSubKey($components.SubPath, $false)
+        if ($null -eq $baseKey) { return }
+
+        foreach ($guidName in $baseKey.GetSubKeyNames()) {
+            $guidKey = $null
+            try {
+                $guidKey = $baseKey.OpenSubKey($guidName, $false)
+                if ($null -eq $guidKey) { continue }
+
+                $invalid = $false
+                foreach ($versionName in $guidKey.GetSubKeyNames()) {
+                    $versionKey = $null
+                    try {
+                        $versionKey = $guidKey.OpenSubKey($versionName, $false)
+                        if ($null -eq $versionKey) { continue }
+
+                        $zeroKey = $null
+                        try {
+                            $zeroKey = $versionKey.OpenSubKey('0', $false)
+                            if ($null -eq $zeroKey) { continue }
+
+                            foreach ($platform in @('win32', 'win64')) {
+                                $platKey = $null
+                                try {
+                                    $platKey = $zeroKey.OpenSubKey($platform, $false)
+                                    if ($null -ne $platKey) {
+                                        $defaultValue = $platKey.GetValue('')
+                                        if ($defaultValue -and (Test-InvalidRegistryReference -Path $defaultValue)) {
+                                            $invalid = $true
+                                            break
+                                        }
+                                    }
+                                }
+                                finally {
+                                    if ($null -ne $platKey) { $platKey.Dispose() }
+                                }
+                            }
+                        }
+                        finally {
+                            if ($null -ne $zeroKey) { $zeroKey.Dispose() }
                         }
                     }
+                    finally {
+                        if ($null -ne $versionKey) { $versionKey.Dispose() }
+                    }
+                    if ($invalid) { break }
                 }
-                if ($invalid) { break }
+
+                if ($invalid) {
+                    $item = [CleanerItem]::new()
+                    $item.Path = "Microsoft.PowerShell.Core\Registry::$($components.HiveName)\$($components.SubPath)\$guidName"
+                    $item.Size = 0
+                    $item.Category = $Target.category
+                    $Items.Add($item)
+                }
             }
-            if ($invalid) {
-                $item = [CleanerItem]::new()
-                $item.Path = $guidKey.PSPath
-                $item.Size = 0
-                $item.Category = $Target.category
-                $Items.Add($item)
+            catch [System.Security.SecurityException], [System.UnauthorizedAccessException] {
+                # Permission denied — skip this subkey
+            }
+            catch {
+                Write-Warning "Registry scan error at '$($Target.keyPath)\$guidName': $($_.Exception.Message)"
+            }
+            finally {
+                if ($null -ne $guidKey) { $guidKey.Dispose() }
             }
         }
-        catch [System.Security.SecurityException], [System.UnauthorizedAccessException] {
-            # Permission denied — skip this subkey
-        }
-        catch {
-            Write-Warning "Registry scan error at '$($guidKey.PSPath)': $($_.Exception.Message)"
-        }
+    }
+    catch [System.Security.SecurityException], [System.UnauthorizedAccessException] {
+        # Permission denied
+    }
+    finally {
+        if ($null -ne $baseKey) { $baseKey.Dispose() }
     }
 }
 
@@ -335,6 +447,7 @@ function Invoke-RuleInvalidMUICache {
 Export-ModuleMember -Function Get-RegistryCleanerTargets,
     Test-InvalidRegistryReference,
     Get-ExecutablePath,
+    ConvertTo-RegistryKeyComponents,
     Invoke-RuleInvalidFileReference,
     Invoke-RuleInvalidAppPath,
     Invoke-RuleInvalidCOMReference,
