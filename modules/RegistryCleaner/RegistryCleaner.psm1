@@ -30,34 +30,21 @@ class RegistryCleaner : ICleanerModule {
             }
 
             try {
-                $subKeys = Get-ChildItem -Path $target.keyPath -ErrorAction SilentlyContinue
-                foreach ($subKey in $subKeys) {
-                    $shouldClean = $false
-
-                    if ($target.rule -eq "invalidFileReference") {
-                        $defaultValue = (Get-ItemProperty -Path $subKey.PSPath -ErrorAction SilentlyContinue).'(default)'
-                        if ($defaultValue -and (Test-InvalidRegistryReference -Path $defaultValue)) {
-                            $shouldClean = $true
-                        }
-                    }
-                    elseif ($target.rule -eq "invalidAppPath") {
-                        $pathValue = (Get-ItemProperty -Path $subKey.PSPath -ErrorAction SilentlyContinue).Path
-                        if ($pathValue -and (Test-InvalidRegistryReference -Path $pathValue)) {
-                            $shouldClean = $true
-                        }
-                    }
-
-                    if ($shouldClean) {
-                        $item = [CleanerItem]::new()
-                        $item.Path = $subKey.PSPath
-                        $item.Size = 0
-                        $item.Category = $target.category
-                        $items.Add($item)
-                    }
+                switch ($target.rule) {
+                    'invalidFileReference'    { Invoke-RuleInvalidFileReference    -Target $target -Items $items }
+                    'invalidAppPath'          { Invoke-RuleInvalidAppPath          -Target $target -Items $items }
+                    'invalidCOMReference'     { Invoke-RuleInvalidCOMReference     -Target $target -Items $items }
+                    'invalidTypeLib'          { Invoke-RuleInvalidTypeLib          -Target $target -Items $items }
+                    'invalidFileAssociation'  { Invoke-RuleInvalidFileAssociation  -Target $target -Items $items }
+                    'invalidStartupEntry'     { Invoke-RuleInvalidStartupEntry     -Target $target -Items $items }
+                    'invalidMUICache'         { Invoke-RuleInvalidMUICache         -Target $target -Items $items }
                 }
             }
+            catch [System.Security.SecurityException], [System.UnauthorizedAccessException] {
+                # Permission denied — expected for protected registry keys
+            }
             catch {
-                # Skip inaccessible keys
+                Write-Warning "Registry scan error at '$($target.keyPath)': $($_.Exception.Message)"
             }
         }
         return $items.ToArray()
@@ -68,7 +55,12 @@ class RegistryCleaner : ICleanerModule {
 
         foreach ($item in $items) {
             try {
-                Remove-Item -Path $item.Path -Recurse -Force -ErrorAction Stop
+                if ($item.PropertyName) {
+                    Remove-ItemProperty -Path $item.Path -Name $item.PropertyName -Force -ErrorAction Stop
+                }
+                else {
+                    Remove-Item -Path $item.Path -Recurse -Force -ErrorAction Stop
+                }
                 $result.ItemCount++
             }
             catch {
