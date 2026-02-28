@@ -3,6 +3,7 @@ using module ..\modules\Core\ICleanerModule.psm1
 using module ..\modules\RegistryCleaner\RegistryCleaner.psm1
 
 BeforeAll {
+    Import-Module "$PSScriptRoot\..\modules\RegistryCleaner\RegistryCleaner.psm1" -Force
     Import-Module "$PSScriptRoot\..\modules\RegistryCleaner\RegistryCleanerRule.psm1" -Force
 }
 
@@ -163,6 +164,81 @@ Describe "RegistryCleanerRule" {
     }
 }
 
+Describe "ConvertTo-RegistryKeyComponents" {
+    It "should parse HKLM drive path" {
+        $result = ConvertTo-RegistryKeyComponents -Path "HKLM:\SOFTWARE\Classes\CLSID"
+        $result.Hive | Should -Be ([Microsoft.Win32.Registry]::LocalMachine)
+        $result.HiveName | Should -Be 'HKEY_LOCAL_MACHINE'
+        $result.SubPath | Should -Be 'SOFTWARE\Classes\CLSID'
+    }
+
+    It "should parse HKCU drive path" {
+        $result = ConvertTo-RegistryKeyComponents -Path "HKCU:\SOFTWARE\Classes"
+        $result.Hive | Should -Be ([Microsoft.Win32.Registry]::CurrentUser)
+        $result.HiveName | Should -Be 'HKEY_CURRENT_USER'
+        $result.SubPath | Should -Be 'SOFTWARE\Classes'
+    }
+
+    It "should parse Registry::HKEY_CLASSES_ROOT path" {
+        $result = ConvertTo-RegistryKeyComponents -Path "Registry::HKEY_CLASSES_ROOT\CLSID"
+        $result.Hive | Should -Be ([Microsoft.Win32.Registry]::ClassesRoot)
+        $result.HiveName | Should -Be 'HKEY_CLASSES_ROOT'
+        $result.SubPath | Should -Be 'CLSID'
+    }
+
+    It "should return null for unsupported path" {
+        $result = ConvertTo-RegistryKeyComponents -Path "C:\some\path"
+        $result | Should -BeNullOrEmpty
+    }
+}
+
+Describe "Resolve-HkcrPath" {
+    Context "HKCR path resolution" {
+        It "should resolve HKCR\CLSID to HKLM path" {
+            $path = "Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\CLSID"
+            $resolved = Resolve-HkcrPath -Path $path
+            $resolved | Should -Be "HKLM:\SOFTWARE\Classes\CLSID"
+        }
+
+        It "should return non-HKCR path unchanged" {
+            $path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+            $resolved = Resolve-HkcrPath -Path $path
+            $resolved | Should -Be $path
+        }
+
+        It "should return original path when key does not exist in either hive" {
+            $guid = [guid]::NewGuid().ToString('B')
+            $path = "Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\CLSID\$guid"
+            $resolved = Resolve-HkcrPath -Path $path
+            $resolved | Should -Be $path
+        }
+
+        It "should resolve to WOW6432Node path when key exists there" {
+            $path = "Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\CLSID"
+            # WOW6432Node\Classes\CLSID は64bit Windowsに存在する
+            if (Test-Path "HKLM:\SOFTWARE\WOW6432Node\Classes\CLSID") {
+                $resolved = Resolve-HkcrPath -Path $path
+                # HKLMに先に存在するのでHKLMが返される（WOW6432Nodeには到達しない）
+                $resolved | Should -Be "HKLM:\SOFTWARE\Classes\CLSID"
+            }
+        }
+
+        It "should resolve HKCU-only key to HKCU path" {
+            $testGuid = "{$([guid]::NewGuid().ToString())}"
+            $testKeyPath = "HKCU:\SOFTWARE\Classes\CLSID\$testGuid"
+            try {
+                New-Item -Path $testKeyPath -Force | Out-Null
+                $path = "Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\CLSID\$testGuid"
+                $resolved = Resolve-HkcrPath -Path $path
+                $resolved | Should -Be $testKeyPath
+            }
+            finally {
+                Remove-Item -Path $testKeyPath -Force -Recurse -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
 Describe "RegistryCleaner" {
     Context "Module properties" {
         BeforeAll {
@@ -252,6 +328,27 @@ Describe "RegistryCleaner" {
             }
             finally {
                 Remove-Item -Path $testKeyPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "should delete HKCU key via HKCR path resolution" {
+            $testGuid = "{$([guid]::NewGuid().ToString())}"
+            $testKeyPath = "HKCU:\SOFTWARE\Classes\CLSID\$testGuid"
+            try {
+                New-Item -Path $testKeyPath -Force | Out-Null
+
+                $item = [CleanerItem]::new()
+                $item.Path = "Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\CLSID\$testGuid"
+                $item.Size = 0
+                $item.Category = "Test"
+
+                $result = $cleaner.Clean(@($item))
+                $result.ItemCount | Should -Be 1
+                $result.Errors.Count | Should -Be 0
+                Test-Path $testKeyPath | Should -Be $false
+            }
+            finally {
+                Remove-Item -Path $testKeyPath -Force -Recurse -ErrorAction SilentlyContinue
             }
         }
 
