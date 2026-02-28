@@ -89,6 +89,46 @@
         "category": "Invalid Uninstall Entries",
         "keyPath": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
         "rule": "invalidAppPath"
+      },
+      {
+        "category": "Invalid COM Objects",
+        "keyPath": "Registry::HKEY_CLASSES_ROOT\\CLSID",
+        "rule": "invalidCOMReference"
+      },
+      {
+        "category": "Invalid TypeLib",
+        "keyPath": "Registry::HKEY_CLASSES_ROOT\\TypeLib",
+        "rule": "invalidTypeLib"
+      },
+      {
+        "category": "Invalid File Associations",
+        "keyPath": "Registry::HKEY_CLASSES_ROOT",
+        "rule": "invalidFileAssociation"
+      },
+      {
+        "category": "Invalid Startup Entries",
+        "keyPath": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "rule": "invalidStartupEntry"
+      },
+      {
+        "category": "Invalid Startup Entries",
+        "keyPath": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+        "rule": "invalidStartupEntry"
+      },
+      {
+        "category": "Invalid Startup Entries",
+        "keyPath": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "rule": "invalidStartupEntry"
+      },
+      {
+        "category": "Invalid Startup Entries",
+        "keyPath": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+        "rule": "invalidStartupEntry"
+      },
+      {
+        "category": "MUI Cache",
+        "keyPath": "HKCU:\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\Shell\\MuiCache",
+        "rule": "invalidMUICache"
       }
     ]
   }
