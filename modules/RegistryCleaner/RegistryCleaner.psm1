@@ -1,6 +1,41 @@
 using module ..\Core\ICleanerModule.psm1
 Import-Module "$PSScriptRoot\RegistryCleanerRule.psm1" -Force
 
+function Resolve-HkcrPath {
+    param(
+        [string]$Path
+    )
+
+    # HKCRパスでなければそのまま返す
+    $hkcrMarker = 'HKEY_CLASSES_ROOT\'
+    $idx = $Path.IndexOf($hkcrMarker, [StringComparison]::OrdinalIgnoreCase)
+    if ($idx -lt 0) {
+        return $Path
+    }
+
+    $relativePath = $Path.Substring($idx + $hkcrMarker.Length)
+
+    # HKLMを先に確認（管理者権限前提）
+    $hklmPath = "HKLM:\SOFTWARE\Classes\$relativePath"
+    if (Test-Path $hklmPath) {
+        return $hklmPath
+    }
+
+    # HKCUを確認
+    $hkcuPath = "HKCU:\SOFTWARE\Classes\$relativePath"
+    if (Test-Path $hkcuPath) {
+        return $hkcuPath
+    }
+
+    # WOW6432Node（32bit COM登録）を確認
+    $wow64Path = "HKLM:\SOFTWARE\WOW6432Node\Classes\$relativePath"
+    if (Test-Path $wow64Path) {
+        return $wow64Path
+    }
+
+    return $Path
+}
+
 class RegistryCleaner : ICleanerModule {
     [hashtable]$Settings
 
@@ -55,11 +90,12 @@ class RegistryCleaner : ICleanerModule {
 
         foreach ($item in $items) {
             try {
+                $resolvedPath = Resolve-HkcrPath -Path $item.Path
                 if ($item.PropertyName) {
-                    Remove-ItemProperty -Path $item.Path -Name $item.PropertyName -Force -ErrorAction Stop
+                    Remove-ItemProperty -Path $resolvedPath -Name $item.PropertyName -Force -ErrorAction Stop
                 }
                 else {
-                    Remove-Item -Path $item.Path -Recurse -Force -ErrorAction Stop
+                    Remove-Item -Path $resolvedPath -Recurse -Force -ErrorAction Stop
                 }
                 $result.ItemCount++
             }
@@ -71,4 +107,4 @@ class RegistryCleaner : ICleanerModule {
     }
 }
 
-Export-ModuleMember -Function @()
+Export-ModuleMember -Function @('Resolve-HkcrPath')
