@@ -1,0 +1,29 @@
+# デフォルト: テキストファイルはLFに正規化
+* text=auto eol=lf
+
+# PowerShell（Windows専用のためCRLF）
+*.ps1    text eol=crlf
+*.psm1   text eol=crlf
+*.psd1   text eol=crlf
+*.ps1xml text eol=crlf
+
+# バッチファイル（Windows専用のためCRLF）
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# 設定・ドキュメント
+*.json text eol=lf
+*.xml  text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+
+# バイナリ（変換しない）
+*.ico  binary
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.exe  binary
+*.dll  binary
+*.zip  binary

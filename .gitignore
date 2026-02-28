@@ -1,0 +1,17 @@
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# VSCode
+.vscode/
+
+# PowerShell
+*.log
+
+# 一時ファイル
+*.tmp
+*.bak
+*.swp
+~$*
