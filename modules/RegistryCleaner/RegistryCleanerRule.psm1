@@ -3,7 +3,7 @@ function Get-RegistryCleanerTargets {
         [hashtable]$Settings
     )
 
-    return $Settings.registryCleaner.targets
+    return , @($Settings.registryCleaner.targets)
 }
 
 function Test-InvalidRegistryReference {
