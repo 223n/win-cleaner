@@ -15,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 $scriptRoot = $PSScriptRoot
 
 Import-Module "$scriptRoot\modules\Core\PermissionChecker.psm1" -Force
+Import-Module "$scriptRoot\modules\Core\SettingsValidator.psm1" -Force
 
 function Read-Settings {
     $settingsPath = Join-Path $scriptRoot "config\settings.json"
@@ -22,7 +23,15 @@ function Read-Settings {
         throw "Settings file not found: $settingsPath"
     }
     $json = Get-Content -Path $settingsPath -Raw -Encoding UTF8
-    return $json | ConvertFrom-Json | ConvertTo-Hashtable
+    try {
+        $parsed = $json | ConvertFrom-Json
+    }
+    catch {
+        throw "Failed to parse settings file '$settingsPath': $($_.Exception.Message)"
+    }
+    $settings = $parsed | ConvertTo-Hashtable
+    Test-SettingsSchema -Settings $settings
+    return $settings
 }
 
 function ConvertTo-Hashtable {
@@ -107,7 +116,15 @@ function Invoke-CleanerModule {
 
     Write-Host "Analyzing with $($moduleInfo.Name)..." -ForegroundColor Yellow
     $Logger.Write("Start: $($moduleInfo.Name)")
-    $items = $Engine.AnalyzeModule($ModuleIndex)
+
+    try {
+        $items = $Engine.AnalyzeModule($ModuleIndex)
+    }
+    catch {
+        Write-Host "Error during analysis: $($_.Exception.Message)" -ForegroundColor Red
+        $Logger.Write("Analyze error ($($moduleInfo.Name)): $($_.Exception.Message)")
+        return
+    }
 
     if ($items.Count -eq 0) {
         Write-Host "No items found." -ForegroundColor Green
@@ -119,12 +136,12 @@ function Invoke-CleanerModule {
 
     $grouped = $items | Group-Object -Property Category
     foreach ($group in $grouped) {
-        $totalSize = ($group.Group | Measure-Object -Property Size -Sum).Sum
+        $totalSize = [long](($group.Group | Measure-Object -Property Size -Sum).Sum)
         Write-Host "  $($group.Name): $($group.Count) items ($(Format-FileSize $totalSize))" -ForegroundColor White
     }
 
     $totalItems = $items.Count
-    $totalSize = ($items | Measure-Object -Property Size -Sum).Sum
+    $totalSize = [long](($items | Measure-Object -Property Size -Sum).Sum)
     Write-Host ""
     Write-Host "Total: $totalItems items ($(Format-FileSize $totalSize))" -ForegroundColor Yellow
     Write-Host ""
@@ -143,7 +160,15 @@ function Invoke-CleanerModule {
     }
 
     Write-Host "Cleaning..." -ForegroundColor Yellow
-    $result = $Engine.CleanModule($ModuleIndex, $items)
+
+    try {
+        $result = $Engine.CleanModule($ModuleIndex, $items)
+    }
+    catch {
+        Write-Host "Error during cleaning: $($_.Exception.Message)" -ForegroundColor Red
+        $Logger.Write("Clean error ($($moduleInfo.Name)): $($_.Exception.Message)")
+        return
+    }
 
     $Logger.WriteCleanResult($moduleInfo.Name, $result)
 
