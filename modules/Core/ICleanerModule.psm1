@@ -2,6 +2,8 @@ class CleanerResult {
     [int]$ItemCount
     [long]$FreedBytes
     [string[]]$Errors
+    # 削除前の控えの保存先。取得しないモジュールでは空のまま
+    [string]$BackupPath
 
     CleanerResult() {
         $this.ItemCount = 0

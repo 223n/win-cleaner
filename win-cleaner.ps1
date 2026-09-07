@@ -152,6 +152,25 @@ function Invoke-CleanerModule {
         return
     }
 
+    # 件数だけでは何が消えるか分からない。先頭を実際に見せてから確認を取る。
+    $previewLimit = 20
+    Write-Host "Targets:" -ForegroundColor Cyan
+    foreach ($item in ($items | Select-Object -First $previewLimit)) {
+        $suffix = if ($item.PropertyName) { " (value: $($item.PropertyName))" } else { "" }
+        Write-Host "  $($item.Path)$suffix" -ForegroundColor Gray
+    }
+    if ($totalItems -gt $previewLimit) {
+        Write-Host "  ... and $($totalItems - $previewLimit) more (see the log for the full list)" -ForegroundColor Gray
+    }
+    Write-Host "  Log: $($Logger.LogPath)" -ForegroundColor Gray
+    Write-Host ""
+
+    if ($moduleInfo.Name -eq 'Registry Cleaner') {
+        Write-Host "Registry changes cannot be undone. A .reg backup is written to the logs directory before deletion." -ForegroundColor Yellow
+        Write-Host "Restore with: reg import <backup file>" -ForegroundColor Yellow
+        Write-Host ""
+    }
+
     $confirm = Read-Host "Proceed with cleaning? (y/N)"
     if ($confirm -ne 'y') {
         Write-Host "Cancelled." -ForegroundColor Gray
@@ -174,6 +193,11 @@ function Invoke-CleanerModule {
 
     Write-Host ""
     Write-Host "Completed: $($result.ItemCount) items removed ($(Format-FileSize $result.FreedBytes))" -ForegroundColor Green
+
+    if ($result.BackupPath -and (Test-Path -LiteralPath $result.BackupPath)) {
+        Write-Host "Backup: $($result.BackupPath)" -ForegroundColor Cyan
+        Write-Host "  Restore with: reg import `"$($result.BackupPath)`"" -ForegroundColor Cyan
+    }
 
     if ($result.Errors.Count -gt 0) {
         Write-Host "Errors: $($result.Errors.Count)" -ForegroundColor Red
