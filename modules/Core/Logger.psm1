@@ -4,7 +4,7 @@ class Logger {
 
     Logger([string]$baseDir) {
         $this.LogDir = Join-Path $baseDir "logs"
-        if (-not (Test-Path $this.LogDir)) {
+        if (-not (Test-Path -LiteralPath $this.LogDir)) {
             New-Item -Path $this.LogDir -ItemType Directory -Force | Out-Null
         }
         $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -14,7 +14,7 @@ class Logger {
     [void] Write([string]$message) {
         $entry = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $message"
         try {
-            Add-Content -Path $this.LogPath -Value $entry -Encoding UTF8
+            Add-Content -LiteralPath $this.LogPath -Value $entry -Encoding UTF8
         }
         catch {
             Write-Warning "Failed to write log: $($_.Exception.Message)"
