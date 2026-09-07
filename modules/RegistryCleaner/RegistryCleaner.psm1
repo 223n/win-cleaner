@@ -63,7 +63,7 @@ class RegistryCleaner : ICleanerModule {
         $targets = Get-RegistryCleanerTargets -Settings $this.Settings
 
         foreach ($target in $targets) {
-            if (-not (Test-Path $target.keyPath)) {
+            if (-not (Test-Path -LiteralPath $target.keyPath)) {
                 continue
             }
 
@@ -95,10 +95,12 @@ class RegistryCleaner : ICleanerModule {
             try {
                 $resolvedPath = Resolve-HkcrPath -Path $item.Path
                 if ($item.PropertyName) {
-                    Remove-ItemProperty -Path $resolvedPath -Name $item.PropertyName -Force -ErrorAction Stop
+                    # -Path はワイルドカードを解釈するため、角括弧を含むキー名で
+                    # 別のキーを巻き添えにする。必ず -LiteralPath を使う。
+                    Remove-ItemProperty -LiteralPath $resolvedPath -Name $item.PropertyName -Force -ErrorAction Stop
                 }
                 else {
-                    Remove-Item -Path $resolvedPath -Recurse -Force -ErrorAction Stop
+                    Remove-Item -LiteralPath $resolvedPath -Recurse -Force -ErrorAction Stop
                 }
                 $result.ItemCount++
             }

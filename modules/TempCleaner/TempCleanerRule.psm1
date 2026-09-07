@@ -6,7 +6,7 @@ function Get-TempCleanerTargets {
     $targets = @()
     foreach ($entry in $Settings.tempCleaner.targets) {
         $path = [Environment]::ExpandEnvironmentVariables($entry.path)
-        if (Test-Path $path) {
+        if (Test-Path -LiteralPath $path) {
             $targets += @{
                 Path     = $path
                 Pattern  = $entry.pattern

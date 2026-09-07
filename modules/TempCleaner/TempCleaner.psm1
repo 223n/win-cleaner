@@ -56,7 +56,10 @@ class TempCleaner : ICleanerModule {
 
         foreach ($item in $items) {
             try {
-                Remove-Item -Path $item.Path -Force -ErrorAction Stop
+                # -Path はワイルドカードを解釈する。角括弧を含む名前
+                # （ブラウザーキャッシュの file[1].js など）を渡すと、
+                # 対象は消えずに別のファイル（file1.js）が消える。
+                Remove-Item -LiteralPath $item.Path -Force -ErrorAction Stop
                 $result.ItemCount++
                 $result.FreedBytes += $item.Size
             }

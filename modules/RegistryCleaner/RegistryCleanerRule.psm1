@@ -19,7 +19,10 @@ function Test-InvalidRegistryReference {
 
     $expanded = [Environment]::ExpandEnvironmentVariables($Path)
     if ($expanded -match '^[A-Za-z]:\\' -or $expanded -match '^\\\\') {
-        return -not (Test-Path $expanded)
+        # -Path はワイルドカードを解釈するため、角括弧を含むパスでは
+        # 実在するファイルを「無い」と判定する。有効なエントリーを無効と
+        # 誤検出し、削除対象にしてしまうため -LiteralPath を使う。
+        return -not (Test-Path -LiteralPath $expanded)
     }
 
     return $false
@@ -380,7 +383,7 @@ function Invoke-RuleInvalidFileAssociation {
                 continue
             }
             $progIdPath = Join-Path $hkcrPath $defaultValue
-            if (-not (Test-Path $progIdPath)) {
+            if (-not (Test-Path -LiteralPath $progIdPath)) {
                 $item = [CleanerItem]::new()
                 $item.Path = $subKey.PSPath
                 $item.Size = 0
