@@ -192,49 +192,77 @@ Describe "ConvertTo-RegistryKeyComponents" {
     }
 }
 
-Describe "Resolve-HkcrPath" {
-    Context "HKCR path resolution" {
-        It "should resolve HKCR\CLSID to HKLM path" {
+Describe "Get-HkcrCandidatePath" {
+    Context "HKCR パスの解決" {
+        It "HKCR\CLSID は実在するハイブをすべて返す" {
             $path = "Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\CLSID"
-            $resolved = Resolve-HkcrPath -Path $path
-            $resolved | Should -Be "HKLM:\SOFTWARE\Classes\CLSID"
+            $resolved = Get-HkcrCandidatePath -Path $path
+            # CLSID は HKLM 側に必ずある。HKCU や WOW6432Node にもあれば複数返る
+            $resolved | Should -Contain "HKLM:\SOFTWARE\Classes\CLSID"
+            $resolved.Count | Should -BeGreaterThan 0
         }
 
-        It "should return non-HKCR path unchanged" {
+        It "HKCR 以外のパスはそのまま1件で返す" {
             $path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
-            $resolved = Resolve-HkcrPath -Path $path
-            $resolved | Should -Be $path
+            $resolved = Get-HkcrCandidatePath -Path $path
+            $resolved.Count | Should -Be 1
+            $resolved[0] | Should -Be $path
         }
 
-        It "should return original path when key does not exist in either hive" {
+        It "どのハイブにも無ければ空を返す" {
             $guid = [guid]::NewGuid().ToString('B')
             $path = "Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\CLSID\$guid"
-            $resolved = Resolve-HkcrPath -Path $path
-            $resolved | Should -Be $path
+            $resolved = Get-HkcrCandidatePath -Path $path
+            $resolved.Count | Should -Be 0
         }
 
-        It "should resolve to WOW6432Node path when key exists there" {
-            $path = "Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\CLSID"
-            # WOW6432Node\Classes\CLSID は64bit Windowsに存在する
-            if (Test-Path "HKLM:\SOFTWARE\WOW6432Node\Classes\CLSID") {
-                $resolved = Resolve-HkcrPath -Path $path
-                # HKLMに先に存在するのでHKLMが返される（WOW6432Nodeには到達しない）
-                $resolved | Should -Be "HKLM:\SOFTWARE\Classes\CLSID"
-            }
-        }
-
-        It "should resolve HKCU-only key to HKCU path" {
+        It "HKCU にしか無いキーは HKCU のパスだけを返す" {
             $testGuid = "{$([guid]::NewGuid().ToString())}"
             $testKeyPath = "HKCU:\SOFTWARE\Classes\CLSID\$testGuid"
             try {
                 New-Item -Path $testKeyPath -Force | Out-Null
                 $path = "Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\CLSID\$testGuid"
-                $resolved = Resolve-HkcrPath -Path $path
-                $resolved | Should -Be $testKeyPath
+                $resolved = Get-HkcrCandidatePath -Path $path
+                $resolved.Count | Should -Be 1
+                $resolved[0] | Should -Be $testKeyPath
             }
             finally {
-                Remove-Item -Path $testKeyPath -Force -Recurse -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $testKeyPath -Force -Recurse -ErrorAction SilentlyContinue
             }
+        }
+    }
+}
+
+Describe "複数ハイブに存在するキーの扱い" {
+    It "両方のハイブに実在するキーは削除せず報告する" {
+        # HKCU 側にだけテストキーを作り、HKLM 側にも実在する既存キー名を使う。
+        # .jpg のような拡張子キーは HKLM\SOFTWARE\Classes に必ずある。
+        $ext = ".wc-dup-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+        $hkcu = "HKCU:\SOFTWARE\Classes\$ext"
+        $hklmExisting = "HKLM:\SOFTWARE\Classes\CLSID"
+        try {
+            New-Item -Path $hkcu -Force | Out-Null
+
+            # CLSID は HKLM と（多くの環境で）WOW6432Node の双方に実在するため、
+            # 候補が複数返ることを利用して skip の分岐を確認する
+            $candidates = Get-HkcrCandidatePath -Path "Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\CLSID"
+            if ($candidates.Count -le 1) {
+                Set-ItResult -Skipped -Because "この環境では CLSID が単一ハイブにしか存在しない"
+                return
+            }
+
+            $item = [CleanerItem]::new()
+            $item.Path = "Microsoft.PowerShell.Core\Registry::HKEY_CLASSES_ROOT\CLSID"
+            $cleaner = [RegistryCleaner]::new(@{ registryCleaner = @{ targets = @() } })
+            $result = $cleaner.Clean(@($item))
+
+            $result.ItemCount | Should -Be 0
+            ($result.Errors -join "`n") | Should -Match "multiple hives"
+            # 実在キーが消えていないこと
+            Test-Path -LiteralPath $hklmExisting | Should -Be $true
+        }
+        finally {
+            Remove-Item -LiteralPath $hkcu -Force -Recurse -ErrorAction SilentlyContinue
         }
     }
 }
