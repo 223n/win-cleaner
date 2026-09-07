@@ -1,6 +1,68 @@
 using module ..\Core\ICleanerModule.psm1
 Import-Module "$PSScriptRoot\RegistryCleanerRule.psm1" -Force
 
+function ConvertTo-NativeRegistryPath {
+    <#
+        reg.exe が解釈できる形式（HKEY_LOCAL_MACHINE\...）へ変換する。
+        PowerShell のドライブ表記（HKLM:\...）やプロバイダー修飾付きの
+        パス（Microsoft.PowerShell.Core\Registry::HKEY_...）は受け付けない。
+    #>
+    param(
+        [string]$Path
+    )
+
+    if ($Path -match '^HKLM:\\(.*)$') { return "HKEY_LOCAL_MACHINE\$($Matches[1])" }
+    if ($Path -match '^HKCU:\\(.*)$') { return "HKEY_CURRENT_USER\$($Matches[1])" }
+    if ($Path -match '^HKCR:\\(.*)$') { return "HKEY_CLASSES_ROOT\$($Matches[1])" }
+    if ($Path -match '(?i)Registry::(HKEY_[A-Z_]+\\.*)$') { return $Matches[1] }
+    if ($Path -match '(?i)^(HKEY_[A-Z_]+\\.*)$') { return $Matches[1] }
+
+    return $null
+}
+
+function Export-RegistryKeyBackup {
+    <#
+        削除前に対象キーを .reg へ書き出す。復元は reg import で行う。
+
+        レジストリの削除は取り消せない。誤検出や想定外のキーを消した場合に
+        戻せる手段が無いと被害が確定するため、削除の直前に必ず控えを取る。
+        書き出しに失敗したものは削除しない（呼び出し側で判断する）。
+
+        1回の実行につき1ファイルへ追記する。reg.exe は UTF-16LE で書き出すため、
+        2件目以降はヘッダー行（Windows Registry Editor Version 5.00）を除いて連結する。
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$BackupPath
+    )
+
+    $native = ConvertTo-NativeRegistryPath -Path $Path
+    if (-not $native) {
+        throw "レジストリパスを reg.exe の形式へ変換できません: $Path"
+    }
+
+    $temp = [System.IO.Path]::GetTempFileName()
+    try {
+        $output = & reg.exe export $native $temp /y 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "reg export が失敗しました ($native): $output"
+        }
+
+        $lines = [System.IO.File]::ReadAllLines($temp, [System.Text.Encoding]::Unicode)
+        if (Test-Path -LiteralPath $BackupPath) {
+            # 2件目以降はヘッダーを落として追記する
+            $body = $lines | Select-Object -Skip 1
+            [System.IO.File]::AppendAllLines($BackupPath, [string[]]$body, [System.Text.Encoding]::Unicode)
+        }
+        else {
+            [System.IO.File]::WriteAllLines($BackupPath, [string[]]$lines, [System.Text.Encoding]::Unicode)
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Get-HkcrCandidatePath {
     <#
         HKCR は HKLM\SOFTWARE\Classes と HKCU\SOFTWARE\Classes を値単位で
@@ -107,6 +169,15 @@ class RegistryCleaner : ICleanerModule {
     [CleanerResult] Clean([CleanerItem[]]$items) {
         $result = [CleanerResult]::new()
 
+        # 削除前の控えを1ファイルへまとめる。復元は reg import で行う。
+        # モジュールは modules\RegistryCleaner にあるので2つ上がリポジトリ直下
+        $logDir = Join-Path (Join-Path $PSScriptRoot '..') '..' | Join-Path -ChildPath 'logs'
+        if (-not (Test-Path -LiteralPath $logDir)) {
+            New-Item -Path $logDir -ItemType Directory -Force | Out-Null
+        }
+        $backupPath = Join-Path $logDir "registry-backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').reg"
+        $result.BackupPath = $backupPath
+
         foreach ($item in $items) {
             try {
                 $candidates = Get-HkcrCandidatePath -Path $item.Path
@@ -124,6 +195,24 @@ class RegistryCleaner : ICleanerModule {
                 }
 
                 $resolvedPath = $candidates[0]
+
+                # 既に無いものは控えを取れないし、取る意味も無い。
+                # 先に確かめて、控えの失敗と区別できるようにする。
+                if (-not (Test-Path -LiteralPath $resolvedPath)) {
+                    $result.Errors += "Failed to remove: $($item.Path) - key not found: $resolvedPath"
+                    continue
+                }
+
+                # 削除前に控えを取る。取れなければ消さない。
+                # 値だけを消す場合も、復元には親キーごとの控えが要る。
+                try {
+                    Export-RegistryKeyBackup -Path $resolvedPath -BackupPath $backupPath
+                }
+                catch {
+                    $result.Errors += "Skipped (backup failed): $resolvedPath - $($_.Exception.Message)"
+                    continue
+                }
+
                 if ($item.PropertyName) {
                     # -Path はワイルドカードを解釈するため、角括弧を含むキー名で
                     # 別のキーを巻き添えにする。必ず -LiteralPath を使う。
@@ -142,4 +231,4 @@ class RegistryCleaner : ICleanerModule {
     }
 }
 
-Export-ModuleMember -Function @('Get-HkcrCandidatePath')
+Export-ModuleMember -Function @('Get-HkcrCandidatePath', 'ConvertTo-NativeRegistryPath', 'Export-RegistryKeyBackup')

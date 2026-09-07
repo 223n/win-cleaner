@@ -34,6 +34,13 @@ class Logger {
             $this.Write("  $($group.Name): $($group.Count) items ($totalSize bytes)")
         }
         $this.Write("Total: $($items.Count) items")
+
+        # 何を消したのか後から追えるよう、対象を1件ずつ残す。
+        # 画面には件数しか出さないため、ここが唯一の記録になる。
+        foreach ($item in $items) {
+            $suffix = if ($item.PropertyName) { " (value: $($item.PropertyName))" } else { "" }
+            $this.Write("  - [$($item.Category)] $($item.Path)$suffix")
+        }
     }
 
     [void] WriteCleanResult([string]$moduleName, [object]$result) {
